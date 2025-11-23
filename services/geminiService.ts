@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, GenerateContentResponse, Chat, Type } from "@google/genai";
 import { AnalysisType, CoverLetterParams, JournalEvaluationResult, JournalGuidelines } from "../types";
 
@@ -6,7 +5,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Use Preview Pro for complex scientific text analysis
 const TEXT_MODEL = 'gemini-3-pro-preview';
-// Use Flash Image for visual analysis
+// Use Flash Image (Nano Banana) for visual analysis, editing, and generation
 const IMAGE_MODEL = 'gemini-2.5-flash-image';
 
 const getJournalStyleParams = (journal: string) => {
@@ -161,38 +160,67 @@ export const generateCoverLetter = async (params: CoverLetterParams, targetJourn
   }
 };
 
-export const analyzeFigure = async (base64Image: string, mimeType: string, context: string, targetJournal: string): Promise<string> => {
+/**
+ * Interactively generates, edits, or analyzes a figure.
+ * Uses gemini-2.5-flash-image (Nano Banana).
+ */
+export const generateOrEditFigure = async (prompt: string, targetJournal: string, base64Image?: string, mimeType?: string): Promise<{ text: string, modifiedImage?: string }> => {
   try {
+    const parts: any[] = [];
+
+    // If image is provided, include it (Edit Mode)
+    if (base64Image && mimeType) {
+      parts.push({
+        inlineData: {
+          data: base64Image,
+          mimeType: mimeType,
+        },
+      });
+    }
+
+    // Add the text prompt (Works for both Edit and Generation)
+    parts.push({
+      text: `You are an expert scientific illustrator and data visualization specialist for **${targetJournal}**.
+      
+      User Request: "${prompt}"
+      
+      Instructions:
+      1. If an image is provided: Edit it or audit it based on the user's request.
+      2. If NO image is provided: GENERATE a new scientific illustration or figure based on the user's description.
+      
+      Ensure the style matches ${targetJournal}'s visual standards (clear, minimal clutter, high contrast, colorblind-friendly).
+      
+      Always provide a text explanation of what you did.`
+    });
+
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: IMAGE_MODEL,
       contents: {
-        parts: [
-          {
-            inlineData: {
-              data: base64Image,
-              mimeType: mimeType,
-            },
-          },
-          {
-            text: `You are an expert in scientific data visualization for **${targetJournal}**. 
-            Analyze this figure. 
-            Context provided by user: "${context}".
-            
-            Critique the following based on standard formatting for ${targetJournal}:
-            1. Legibility (font sizes, contrast).
-            2. Clarity of data presentation (is the chart type appropriate?).
-            3. Aesthetics (alignment, color blindness accessibility).
-            4. Does it look "publication ready" for ${targetJournal}?
-            
-            Provide actionable advice.`
-          }
-        ]
+        parts: parts
       }
     });
-    return response.text || "No analysis generated for the image.";
+
+    let textOutput = "";
+    let imageOutput = undefined;
+
+    if (response.candidates && response.candidates[0].content.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.text) {
+          textOutput += part.text;
+        }
+        if (part.inlineData) {
+           imageOutput = part.inlineData.data;
+        }
+      }
+    }
+
+    return {
+      text: textOutput || "Processed.",
+      modifiedImage: imageOutput
+    };
   } catch (error) {
-    console.error("Error analyzing figure:", error);
-    return "Error analyzing figure. Please ensure the image is a supported format.";
+    console.error("Error processing figure:", error);
+    return { text: "Error processing figure request. Please try again." };
   }
 };
 
