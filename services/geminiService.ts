@@ -1,12 +1,17 @@
 import { GoogleGenAI, GenerateContentResponse, Chat, Type } from "@google/genai";
 import { AnalysisType, CoverLetterParams, JournalEvaluationResult, JournalGuidelines } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to get a fresh AI client instance with the latest API key
+const getAiClient = () => {
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+};
 
 // Use Preview Pro for complex scientific text analysis
 const TEXT_MODEL = 'gemini-3-pro-preview';
-// Use Flash Image (Nano Banana) for visual analysis, editing, and generation
-const IMAGE_MODEL = 'gemini-2.5-flash-image';
+// Use Flash Image (Nano Banana) for editing existing images AND standard generation
+const FLASH_IMAGE_MODEL = 'gemini-2.5-flash-image';
+// Use Pro Image (Nano Banana Pro) for high-fidelity (2K) generation (Text-to-Image only)
+const PRO_IMAGE_MODEL = 'gemini-3-pro-image-preview';
 
 const getJournalStyleParams = (journal: string) => {
   const j = journal.toLowerCase();
@@ -35,6 +40,7 @@ const getJournalStyleParams = (journal: string) => {
 };
 
 export const analyzeManuscriptText = async (text: string, type: AnalysisType, targetJournal: string): Promise<string> => {
+  const ai = getAiClient();
   const style = getJournalStyleParams(targetJournal);
   
   const systemInstruction = `
@@ -112,6 +118,7 @@ export const analyzeManuscriptText = async (text: string, type: AnalysisType, ta
 };
 
 export const generateCoverLetter = async (params: CoverLetterParams, targetJournal: string): Promise<string> => {
+  const ai = getAiClient();
   const style = getJournalStyleParams(targetJournal);
 
   const prompt = `
@@ -161,15 +168,32 @@ export const generateCoverLetter = async (params: CoverLetterParams, targetJourn
 };
 
 /**
- * Interactively generates, edits, or analyzes a figure.
- * Uses gemini-2.5-flash-image (Nano Banana).
+ * Interactively generates or edits a figure.
+ * - Uses gemini-2.5-flash-image (Nano Banana) for ALL EDITING (Image Input).
+ * - Uses gemini-3-pro-image-preview (Nano Banana Pro) ONLY for PURE GENERATION (Text Input + 2K).
  */
-export const generateOrEditFigure = async (prompt: string, targetJournal: string, base64Image?: string, mimeType?: string): Promise<{ text: string, modifiedImage?: string }> => {
+export const generateOrEditFigure = async (
+  prompt: string, 
+  targetJournal: string,
+  aspectRatio: string,
+  imageSize: string, 
+  base64Image?: string, 
+  mimeType?: string
+): Promise<{ text: string, modifiedImage?: string }> => {
+  const ai = getAiClient();
   try {
+    const hasInputImage = !!(base64Image && mimeType);
+    
+    // CRITICAL FIX: Pro model does NOT support input images (inlineData) for editing.
+    // We must force Flash (Nano Banana) if an image is provided, regardless of requested resolution.
+    const usePro = imageSize === '2K' && !hasInputImage;
+    const model = usePro ? PRO_IMAGE_MODEL : FLASH_IMAGE_MODEL;
+    
     const parts: any[] = [];
+    let config = {};
 
-    // If image is provided, include it (Edit Mode)
-    if (base64Image && mimeType) {
+    // 1. Handle Input Image (Edit Context)
+    if (hasInputImage) {
       parts.push({
         inlineData: {
           data: base64Image,
@@ -178,53 +202,105 @@ export const generateOrEditFigure = async (prompt: string, targetJournal: string
       });
     }
 
-    // Add the text prompt (Works for both Edit and Generation)
-    parts.push({
-      text: `You are an expert scientific illustrator and data visualization specialist for **${targetJournal}**.
+    // 2. Handle Prompt & Instructions
+    if (usePro) {
+      // --- PRO PATH (Text-to-Image Generation 2K) ---
+      const proPrompt = `
+        You are an expert scientific illustrator for **${targetJournal}**. 
+        You specialize in creating figures that meet strict academic publication standards.
+        
+        Task: Generate a high-resolution (2K), publication-quality scientific figure.
+        User Request: "${prompt}"
+
+        ACADEMIC STANDARDS for ${targetJournal}:
+        - **Visual Style**: Flat, vector-graphic aesthetic (like Adobe Illustrator/BioRender).
+        - **Background**: Pure WHITE background. No gradients or textures.
+        - **Typography**: Clean, sans-serif fonts (Arial/Helvetica style). High contrast and legible.
+        - **Color Palette**: Professional, colorblind-safe palettes (e.g., Viridis, Okabe-Ito, or muted journal colors).
+        - **Rigor**: Scientific accuracy is paramount. Diagrams should be schematic and logical.
+      `;
+
+      parts.push({ text: proPrompt });
       
-      User Request: "${prompt}"
+      // Pro supports structured config
+      config = {
+        imageConfig: {
+          aspectRatio: aspectRatio, 
+          imageSize: imageSize, 
+        }
+      };
+
+    } else {
+      // --- FLASH PATH (Edits OR Standard Gen) ---
+      let flashPrompt = `You are an expert scientific illustrator for **${targetJournal}**.`;
       
-      Instructions:
-      1. If an image is provided: Edit it or audit it based on the user's request.
-      2. If NO image is provided: GENERATE a new scientific illustration or figure based on the user's description.
+      if (hasInputImage) {
+        // EDITING MODE
+        flashPrompt += `\nUser Request to EDIT/MODIFY this image: "${prompt}"
+        \nInstructions:
+        - Modify the provided image to satisfy the user's request.
+        - Maintain strict scientific accuracy and academic style.
+        - Ensure the background remains clean (preferably white).
+        - Provide a brief text summary of changes.`;
+        
+        if (imageSize === '2K') {
+            flashPrompt += `\nNote: The user requested High Resolution. Please generate the highest quality output possible with clear details.`;
+        }
+      } else {
+        // GENERATION MODE (1K / Fast)
+        flashPrompt += `\nUser Request to GENERATE a scientific figure: "${prompt}"
+        \nACADEMIC REQUIREMENTS:
+        - Style: Professional scientific illustration.
+        - Background: Pure WHITE.
+        - Content: accurate schematic or clear data visualization.
+        - Font: Sans-serif, legible.
+        - No artistic distortions.`;
+
+        // Flash (Nano Banana) does NOT support imageConfig. Bake into prompt.
+        const ratioMap: Record<string, string> = {
+          "1:1": "square (1:1 aspect ratio)",
+          "4:3": "standard landscape (4:3 aspect ratio)",
+          "16:9": "wide landscape (16:9 aspect ratio)"
+        };
+        flashPrompt += `\nOutput Format: Please generate a ${ratioMap[aspectRatio] || "square"} image.`;
+      }
       
-      Ensure the style matches ${targetJournal}'s visual standards (clear, minimal clutter, high contrast, colorblind-friendly).
-      
-      Always provide a text explanation of what you did.`
-    });
+      parts.push({ text: flashPrompt });
+    }
 
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: IMAGE_MODEL,
-      contents: {
-        parts: parts
-      }
+      model: model,
+      contents: { parts: parts },
+      config: config
     });
 
     let textOutput = "";
     let imageOutput = undefined;
 
+    // Iterate parts to find text and image
     if (response.candidates && response.candidates[0].content.parts) {
       for (const part of response.candidates[0].content.parts) {
-        if (part.text) {
-          textOutput += part.text;
-        }
-        if (part.inlineData) {
-           imageOutput = part.inlineData.data;
-        }
+        if (part.text) textOutput += part.text;
+        if (part.inlineData) imageOutput = part.inlineData.data;
       }
     }
+    
+    if (!textOutput) {
+      textOutput = hasInputImage && !imageOutput 
+        ? "I analyzed the image but did not generate a modification." 
+        : `Processed figure for ${targetJournal}.`;
+    }
 
-    return {
-      text: textOutput || "Processed.",
-      modifiedImage: imageOutput
-    };
+    return { text: textOutput, modifiedImage: imageOutput };
+
   } catch (error) {
     console.error("Error processing figure:", error);
-    return { text: "Error processing figure request. Please try again." };
+    return { text: "Error processing figure request. Please ensure you have selected a valid API key." };
   }
 };
 
 export const getJournalGuidelines = async (journalName: string): Promise<JournalGuidelines | null> => {
+  const ai = getAiClient();
   const prompt = `
     Provide a structured summary of the submission guidelines for the academic journal: **${journalName}**.
     
@@ -287,6 +363,7 @@ export const getJournalGuidelines = async (journalName: string): Promise<Journal
 };
 
 export const createChatSession = (): Chat => {
+  const ai = getAiClient();
   return ai.chats.create({
     model: TEXT_MODEL,
     config: {
@@ -303,6 +380,7 @@ export const createChatSession = (): Chat => {
 };
 
 export const createRefinementChat = (original: string, result: string, type: string, targetJournal: string): Chat => {
+  const ai = getAiClient();
   return ai.chats.create({
     model: TEXT_MODEL,
     config: {
@@ -320,6 +398,7 @@ export const createRefinementChat = (original: string, result: string, type: str
 };
 
 export const suggestTargetJournals = async (title: string, abstract: string, fullText: string): Promise<any[]> => {
+  const ai = getAiClient();
   const prompt = `
     You are a Senior Editor and Strategic Publication Consultant.
     
@@ -348,7 +427,7 @@ export const suggestTargetJournals = async (title: string, abstract: string, ful
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response: GenerateContentResponse = await ai.models.generateContent({
       model: TEXT_MODEL,
       contents: prompt,
       config: {
@@ -382,6 +461,7 @@ export const suggestTargetJournals = async (title: string, abstract: string, ful
 };
 
 export const evaluateJournalFit = async (title: string, abstract: string, fullText: string, journalName: string): Promise<JournalEvaluationResult | null> => {
+  const ai = getAiClient();
   const prompt = `
     Act as a Senior Editor at the journal: "${journalName}".
     
