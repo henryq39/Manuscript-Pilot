@@ -113,22 +113,37 @@ export const analyzeManuscriptText = async (text: string, type: AnalysisType, ta
 };
 
 export const generateCoverLetter = async (params: CoverLetterParams, targetJournal: string): Promise<string> => {
+  const style = getJournalStyleParams(targetJournal);
+
   const prompt = `
-  Draft a cover letter for submission to **${targetJournal}**.
+  Act as a Senior Editor helping to draft a high-impact Cover Letter for submission to **${targetJournal}**.
   
-  Details:
+  Manuscript Details:
   - Title: ${params.title}
   - Corresponding Author: ${params.authorName}
   - Affiliation: ${params.affiliation}
-  - Editor Name (if known): ${params.editorName || "the Editor"}
-  - Abstract/Summary: ${params.abstract}
-  - Statement of Novelty/Relevance: ${params.noveltyStatement}
+  - Editor Name: ${params.editorName || "the Editor"}
   
-  Instruction:
-  The letter should be tailored to the style of ${targetJournal}. 
-  For top-tier journals (Nature/Science/Cell), emphasize broad conceptual advance.
-  For specialized journals, emphasize methodological rigor and specific field contribution.
-  Keep it concise (max 1.5 pages) and professional.
+  Abstract:
+  "${params.abstract}"
+
+  Manuscript Content (Intro/Results/Discussion):
+  "${params.manuscriptText.substring(0, 50000)}"
+
+  Task:
+  1. Analyze the provided Abstract and Manuscript Content to extract the core novelty and conceptual advance.
+  2. Write a compelling cover letter that pitches this specific advance to **${targetJournal}**.
+  
+  Style Guide for ${targetJournal}:
+  - Focus: ${style.focus}
+  - Tone: ${style.tone}
+  
+  Structure:
+  - Standard professional opening.
+  - A strong "Hook" paragraph stating the major discovery immediately.
+  - A concise summary of the key findings and why they matter.
+  - A closing statement on why this fits ${targetJournal}'s scope.
+  - Standard sign-off.
   `;
 
   try {
@@ -136,7 +151,7 @@ export const generateCoverLetter = async (params: CoverLetterParams, targetJourn
       model: TEXT_MODEL,
       contents: prompt,
       config: {
-        temperature: 0.5,
+        temperature: 0.6,
       }
     });
     return response.text || "Could not generate cover letter.";

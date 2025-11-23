@@ -14,7 +14,7 @@ const CoverLetterGen: React.FC<CoverLetterGenProps> = ({ targetJournal }) => {
     authorName: '',
     affiliation: '',
     abstract: '',
-    noveltyStatement: '',
+    manuscriptText: '',
     editorName: ''
   });
   const [letter, setLetter] = useState('');
@@ -89,31 +89,32 @@ const CoverLetterGen: React.FC<CoverLetterGenProps> = ({ targetJournal }) => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Novelty Statement</label>
-            <textarea 
-              rows={4}
-              placeholder={`Why is this a good fit for ${targetJournal}?`}
-              className="w-full p-2 border border-gray-300 rounded text-sm focus:border-natureRed focus:ring-1 focus:ring-natureRed outline-none"
-              value={params.noveltyStatement}
-              onChange={(e) => handleChange('noveltyStatement', e.target.value)}
-            />
-             <p className="text-xs text-gray-400 mt-1">The AI will tailor the tone for {targetJournal} automatically.</p>
-          </div>
-
-          <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Abstract</label>
             <textarea 
               rows={6}
               className="w-full p-2 border border-gray-300 rounded text-sm focus:border-natureRed focus:ring-1 focus:ring-natureRed outline-none"
               value={params.abstract}
               onChange={(e) => handleChange('abstract', e.target.value)}
+              placeholder="Paste abstract..."
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Manuscript Text</label>
+            <textarea 
+              rows={8}
+              placeholder="Paste Introduction, Results, and Discussion here. The AI will extract the novelty for you."
+              className="w-full p-2 border border-gray-300 rounded text-sm focus:border-natureRed focus:ring-1 focus:ring-natureRed outline-none"
+              value={params.manuscriptText}
+              onChange={(e) => handleChange('manuscriptText', e.target.value)}
+            />
+             <p className="text-xs text-gray-400 mt-1">The AI will analyze this text to identify the conceptual advance and tailor the pitch to {targetJournal}.</p>
           </div>
 
           <button
             onClick={handleGenerate}
-            disabled={isLoading}
-            className="w-full py-3 bg-natureRed text-white font-bold rounded hover:bg-red-700 transition-colors flex items-center justify-center"
+            disabled={isLoading || !params.manuscriptText}
+            className={`w-full py-3 bg-natureRed text-white font-bold rounded hover:bg-red-700 transition-colors flex items-center justify-center ${isLoading || !params.manuscriptText ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><FileText className="w-4 h-4 mr-2" /> Generate Letter</>}
           </button>
@@ -139,7 +140,7 @@ const CoverLetterGen: React.FC<CoverLetterGenProps> = ({ targetJournal }) => {
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-gray-400">
               <FileText className="w-16 h-16 mb-4 opacity-20" />
-              <p>Fill out the details to generate a draft for <strong>{targetJournal}</strong>.</p>
+              <p className="text-center">Paste your manuscript text to auto-generate a high-impact cover letter for <strong>{targetJournal}</strong>.</p>
             </div>
           )}
         </div>

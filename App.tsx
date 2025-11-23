@@ -12,25 +12,6 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.EDITOR);
   const [targetJournal, setTargetJournal] = useState<string>("Nature Cell Biology");
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case AppTab.EDITOR:
-        return <Editor targetJournal={targetJournal} />;
-      case AppTab.CHAT:
-        return <ChatAssistant />;
-      case AppTab.JOURNAL_FINDER:
-        return <JournalFinder />;
-      case AppTab.COVER_LETTER:
-        return <CoverLetterGen targetJournal={targetJournal} />;
-      case AppTab.FIGURE_CHECK:
-        return <FigureCheck targetJournal={targetJournal} />;
-      case AppTab.GUIDELINES:
-        return <Guidelines targetJournal={targetJournal} />;
-      default:
-        return <Editor targetJournal={targetJournal} />;
-    }
-  };
-
   return (
     <div className="flex h-screen w-screen bg-white overflow-hidden font-sans text-gray-900">
       <Sidebar 
@@ -40,7 +21,24 @@ const App: React.FC = () => {
         onJournalChange={setTargetJournal}
       />
       <main className="flex-1 h-full relative overflow-hidden bg-white z-0">
-        {renderContent()}
+        <div className={activeTab === AppTab.EDITOR ? 'block h-full' : 'hidden'}>
+           <Editor targetJournal={targetJournal} />
+        </div>
+        <div className={activeTab === AppTab.CHAT ? 'block h-full' : 'hidden'}>
+           <ChatAssistant />
+        </div>
+        <div className={activeTab === AppTab.JOURNAL_FINDER ? 'block h-full' : 'hidden'}>
+           <JournalFinder />
+        </div>
+        <div className={activeTab === AppTab.COVER_LETTER ? 'block h-full' : 'hidden'}>
+           <CoverLetterGen targetJournal={targetJournal} />
+        </div>
+        <div className={activeTab === AppTab.FIGURE_CHECK ? 'block h-full' : 'hidden'}>
+           <FigureCheck targetJournal={targetJournal} />
+        </div>
+        <div className={activeTab === AppTab.GUIDELINES ? 'block h-full' : 'hidden'}>
+           <Guidelines targetJournal={targetJournal} />
+        </div>
       </main>
     </div>
   );

@@ -27,7 +27,7 @@ export interface CoverLetterParams {
   authorName: string;
   affiliation: string;
   abstract: string;
-  noveltyStatement: string;
+  manuscriptText: string; // Replaced noveltyStatement with full text
   editorName?: string;
 }
 
